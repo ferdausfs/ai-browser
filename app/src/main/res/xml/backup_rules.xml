@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- PRIVACY: browsing data (tabs, history, bookmarks, prefs, WebView data)
+         never leaves the device through Android backup. allowBackup is false;
+         this file is defense in depth for API <= 30. -->
+    <exclude domain="root" path="." />
+    <exclude domain="file" path="." />
+    <exclude domain="database" path="." />
+    <exclude domain="sharedpref" path="." />
+    <exclude domain="external" path="." />
+</full-backup-content>

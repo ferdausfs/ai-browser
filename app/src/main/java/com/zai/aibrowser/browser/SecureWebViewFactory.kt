@@ -7,14 +7,22 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.net.http.SslError
+import android.webkit.GeolocationPermissions
+import android.webkit.PermissionRequest
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.SslErrorHandler
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
+import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import com.zai.aibrowser.BuildConfig
+import com.zai.aibrowser.privacy.PrivacyPrefs
+import com.zai.aibrowser.privacy.TrackerBlocker
+import kotlin.math.roundToInt
 
 /**
  * Central, auditable WebView hardening + event wiring.
@@ -25,11 +33,17 @@ import android.webkit.WebViewClient
  * 2. SSL errors are always cancelled — never auto-continued.
  * 3. file://, content://, data:, blob: and javascript: navigations are blocked.
  * 4. Unknown/external schemes do NOT fire arbitrary intents (blocked with a toast).
- *    mailto/tel/sms/geo/market open through the platform resolver only. Phase 4 adds
- *    a strict allowlist with user confirmation for everything else.
- * 5. Safe Browsing stays on; mixed content is never allowed; geolocation is off.
+ *    mailto/tel/sms/geo/market open through the platform resolver only.
+ * 5. Safe Browsing follows the user setting (default on); mixed content is never
+ *    allowed; geolocation is off at the engine level.
+ * 6. Camera/microphone/geo permission prompts from pages are DENIED explicitly.
+ *    The app holds no runtime permissions for them at all.
+ * 7. Third-party cookies are blocked by default (user toggle available).
+ * 8. Tracking protection intercepts third-party subresource requests against a
+ *    curated blocklist; blocked counts are real floor counts.
  */
 class SecureWebViewFactory(
+    private val privacyPrefs: PrivacyPrefs,
     private val callbacks: Callbacks
 ) {
 
@@ -55,12 +69,46 @@ class SecureWebViewFactory(
         s.setSupportMultipleWindows(false)
         s.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
         s.cacheMode = WebSettings.LOAD_DEFAULT
-        s.safeBrowsingEnabled = true
+        s.safeBrowsingEnabled = privacyPrefs.safeBrowsingEnabled
         s.setGeolocationEnabled(false)
-        s.userAgentString = s.userAgentString + " AiBrowser/1.0"
+        // Honor the OS text-scaling setting deterministically (accessibility).
+        s.textZoom = (100f * context.resources.configuration.fontScale).roundToInt()
+        s.userAgentString = s.userAgentString + " AegisBrowser/" + BuildConfig.VERSION_NAME
         webView.isFocusableInTouchMode = true
 
+        // SECURITY: never expose page content to app internals and never accept
+        // a JavaScript bridge. This call stays absent on purpose.
+
+        // Privacy: third-party cookies blocked by default (user toggle available).
+        val cookieManager = CookieManager.getInstance()
+        cookieManager.setAcceptCookie(true) // first-party cookies remain usable
+        cookieManager.setAcceptThirdPartyCookies(webView, privacyPrefs.thirdPartyCookiesAllowed)
+
         webView.webViewClient = object : WebViewClient() {
+
+            override fun shouldInterceptRequest(
+                view: WebView,
+                request: WebResourceRequest
+            ): WebResourceResponse? {
+                // Never block main-frame navigations or non-http(s) schemes.
+                if (request.isForMainFrame) return null
+                val scheme = request.url.scheme?.lowercase()
+                if (scheme != "http" && scheme != "https") return null
+                val pageHost = Uri.parse(view.url ?: tab.currentUrl.value).host
+                val requestHost = request.url.host ?: return null
+                val blocked = TrackerBlocker.shouldBlock(
+                    pageHost = pageHost,
+                    requestHost = requestHost,
+                    protectionEnabled = privacyPrefs.trackingProtectionEnabled,
+                    siteExceptions = privacyPrefs.siteExceptionSet()
+                )
+                if (blocked) {
+                    tab.blockedCount.value = tab.blockedCount.value + 1
+                    privacyPrefs.recordBlocked()
+                    return TrackerBlocker.blockedResponse()
+                }
+                return null
+            }
 
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 return handleUrl(request.url.toString())
@@ -79,6 +127,7 @@ class SecureWebViewFactory(
                 tab.error.value = null
                 tab.isLoading.value = true
                 tab.currentUrl.value = url
+                tab.blockedCount.value = 0 // per-page blocked counter resets each load
             }
 
             override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) {
@@ -105,7 +154,7 @@ class SecureWebViewFactory(
                 tab.error.value = PageError(
                     isSslError = true,
                     description = "SSL certificate error (code ${error.primaryError}). " +
-                        "AI Browser never bypasses certificate errors.",
+                        "Aegis Browser never bypasses certificate errors.",
                     url = error.url
                 )
             }
@@ -149,8 +198,27 @@ class SecureWebViewFactory(
             override fun onReceivedTitle(view: WebView, title: String?) {
                 tab.title.value = title ?: ""
             }
+
+            override fun onPermissionRequest(request: PermissionRequest) {
+                // PRIVACY: sites never get camera/mic from this browser. The app
+                // holds no corresponding runtime permissions, and the privacy
+                // dashboard states this policy explicitly.
+                postOnUiThread(webView) { request.deny() }
+            }
+
+            override fun onGeolocationPermissionsShowPrompt(
+                origin: String,
+                callback: GeolocationPermissions.Callback
+            ) {
+                // PRIVACY: geolocation is disabled engine-wide.
+                callback.invoke(origin, false, false)
+            }
         }
         return webView
+    }
+
+    private fun postOnUiThread(webView: WebView, block: () -> Unit) {
+        webView.post(block)
     }
 
     private fun launchExternal(context: Context, url: String) {

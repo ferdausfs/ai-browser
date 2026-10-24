@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
@@ -30,10 +31,21 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.zai.aibrowser.browser.BrowserTab
 
+/**
+ * Full-page error state with accurate messaging: SSL errors never offer a
+ * bypass; offline is detected and stated; renderer crashes offer recovery.
+ */
 @Composable
-fun ErrorOverlay(tab: BrowserTab, onRetry: () -> Unit, onGoBack: () -> Unit) {
+fun ErrorOverlay(
+    tab: BrowserTab,
+    online: Boolean,
+    onRetry: () -> Unit,
+    onGoBack: () -> Unit,
+    onGoHome: () -> Unit
+) {
     val error by tab.error.collectAsStateWithLifecycle()
     val current = error ?: return
+    val offline = !online
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -47,19 +59,32 @@ fun ErrorOverlay(tab: BrowserTab, onRetry: () -> Unit, onGoBack: () -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Icon(
-                    imageVector = if (current.isSslError) Icons.Default.Lock else Icons.Default.Warning,
+                    imageVector = when {
+                        offline -> Icons.Default.CloudOff
+                        current.isSslError -> Icons.Default.Lock
+                        else -> Icons.Default.Warning
+                    },
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
+                    tint = if (offline) MaterialTheme.colorScheme.onSurfaceVariant
+                    else MaterialTheme.colorScheme.error,
                     modifier = Modifier.size(44.dp)
                 )
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    if (current.isSslError) "Connection not secure" else "Can't open this page",
+                    when {
+                        offline -> "You're offline"
+                        current.isSslError -> "Connection not secure"
+                        else -> "Can't open this page"
+                    },
                     style = MaterialTheme.typography.titleLarge
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    current.description,
+                    when {
+                        offline -> "Check your connection, then try again."
+                        current.isSslError -> current.description
+                        else -> current.description
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center
@@ -75,13 +100,14 @@ fun ErrorOverlay(tab: BrowserTab, onRetry: () -> Unit, onGoBack: () -> Unit) {
                 if (current.isSslError) {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "AI Browser never bypasses certificate errors.",
+                        "Aegis Browser never bypasses certificate errors.",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
                 Spacer(Modifier.height(16.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    TextButton(onClick = onGoHome) { Text("Home") }
                     TextButton(onClick = onGoBack) { Text("Go back") }
                     Button(onClick = onRetry) { Text("Try again") }
                 }

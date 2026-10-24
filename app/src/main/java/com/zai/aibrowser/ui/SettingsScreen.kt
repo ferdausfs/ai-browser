@@ -43,6 +43,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.zai.aibrowser.BuildConfig
+import com.zai.aibrowser.privacy.SearchEngines
 import com.zai.aibrowser.update.UpdateConfig
 import com.zai.aibrowser.update.UpdateState
 import com.zai.aibrowser.ui.theme.ThemeMode
@@ -91,16 +92,78 @@ fun SettingsScreen(vm: BrowserViewModel, updateVm: UpdateViewModel, onBack: () -
             }
         }
 
+        SettingsSection("Search engine") {
+            val engineId by vm.searchEngineId.collectAsStateWithLifecycle()
+            Text(
+                "Used when you type a query instead of a URL.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 8.dp)
+            ) {
+                SearchEngines.ALL.take(3).forEach { engine ->
+                    FilterChip(
+                        selected = engineId == engine.id,
+                        onClick = { vm.setSearchEngine(engine.id) },
+                        label = { Text(engine.label) }
+                    )
+                }
+            }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                SearchEngines.ALL.drop(3).forEach { engine ->
+                    FilterChip(
+                        selected = engineId == engine.id,
+                        onClick = { vm.setSearchEngine(engine.id) },
+                        label = { Text(engine.label) }
+                    )
+                }
+            }
+        }
+
         SettingsSection("Privacy") {
+            val trackingOn by vm.trackingProtection.collectAsStateWithLifecycle()
+            val thirdPartyCookies by vm.thirdPartyCookies.collectAsStateWithLifecycle()
+            val safeBrowsingOn by vm.safeBrowsing.collectAsStateWithLifecycle()
+            PrivacySwitchRow(
+                title = "Tracking protection",
+                caption = "Blocks known tracker/ad/malware domains on third-party " +
+                    "requests using an embedded blocklist. WebView cannot see every " +
+                    "channel (DNS, service workers, WebRTC) — this is not complete " +
+                    "anti-tracking.",
+                checked = trackingOn,
+                onChecked = vm::setTrackingProtection
+            )
+            PrivacySwitchRow(
+                title = "Allow third-party cookies",
+                caption = "Blocked by default. Some sign-ins may break; enabling this " +
+                    "lets sites track you across other sites.",
+                checked = thirdPartyCookies,
+                onChecked = vm::setThirdPartyCookies
+            )
+            PrivacySwitchRow(
+                title = "Safe Browsing",
+                caption = "Warns about dangerous sites. URL checks are handled by the " +
+                    "Android System WebView (Google service).",
+                checked = safeBrowsingOn,
+                onChecked = vm::setSafeBrowsing
+            )
             var showClearDialog by rememberSaveable { mutableStateOf(false) }
-            SettingRow(icon = Icons.Default.Delete, label = "Clear browsing data…") {
+            SettingRow(icon = Icons.Default.Delete, label = "Erase browsing data…") {
                 showClearDialog = true
             }
             if (showClearDialog) {
                 ClearBrowsingDataDialog(
-                    onConfirm = { h, c, cache ->
+                    onConfirm = { tabs, h, c, cache ->
                         showClearDialog = false
-                        vm.clearBrowsingData(h, c, cache)
+                        vm.clearBrowsingData(tabs, h, c, cache)
                     },
                     onDismiss = { showClearDialog = false }
                 )
@@ -116,12 +179,46 @@ fun SettingsScreen(vm: BrowserViewModel, updateVm: UpdateViewModel, onBack: () -
                 vm.openBrowserAndNavigate(UpdateConfig.RELEASES_PAGE_URL)
             }
             Text(
-                "AI Browser v" + BuildConfig.VERSION_NAME + " — Phase 1",
+                "Aegis Browser v" + BuildConfig.VERSION_NAME +
+                    " · Engine: Android System WebView — keep it updated for security fixes.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            )
+            Text(
+                "Browsing data stays on this device. No analytics or telemetry.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
             )
         }
+    }
+}
+
+@Composable
+private fun PrivacySwitchRow(
+    title: String,
+    caption: String,
+    checked: Boolean,
+    onChecked: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onChecked(!checked) }
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                caption,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Switch(checked = checked, onCheckedChange = onChecked)
     }
 }
 
@@ -204,7 +301,7 @@ private fun UpdateSection(updateVm: UpdateViewModel) {
                 Spacer(Modifier.padding(top = 8.dp))
                 Button(onClick = { updateVm.install() }) { Text("Install update") }
                 Text(
-                    "If installation does not start, allow \"Install unknown apps\" for AI Browser.",
+                    "If installation does not start, allow \"Install unknown apps\" for Aegis Browser.",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp)

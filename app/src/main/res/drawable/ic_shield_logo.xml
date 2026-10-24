@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Aegis shield logo, original artwork for this project. -->
+    <path
+        android:pathData="M12,2.8 C14.2,3.9 16.3,4.7 18.5,5.1 C18.8,11.8 17,17.9 12,22 C7,17.9 5.2,11.8 5.5,5.1 C7.7,4.7 9.8,3.9 12,2.8 Z"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.8"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M12,8.2 L13,10.7 L15.5,11.7 L13,12.7 L12,15.2 L11,12.7 L8.5,11.7 L11,10.7 Z"
+        android:fillColor="#FF000000" />
+</vector>

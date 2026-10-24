@@ -12,7 +12,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -47,7 +49,10 @@ private fun BrowserChrome(vm: BrowserViewModel) {
     val activeTab by vm.activeTab.collectAsStateWithLifecycle()
     val tabs by vm.tabs.collectAsStateWithLifecycle()
     val sheet by vm.activeSheet.collectAsStateWithLifecycle()
+    val editing by vm.isEditingAddress.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    // Checked when the chrome is composed; Retry re-composes the error overlay.
+    val online = remember { vm.isOnline() }
 
     LaunchedEffect(Unit) {
         vm.snackbarEvents.collect { message -> snackbarHostState.showSnackbar(message) }
@@ -56,6 +61,7 @@ private fun BrowserChrome(vm: BrowserViewModel) {
     BackHandler {
         when {
             sheet != BrowserViewModel.Sheet.NONE -> vm.closeSheet()
+            editing -> vm.onAddressEditing(false)
             activeTab?.canGoBack?.value == true -> vm.goBack()
             else -> (context as? Activity)?.finish()
         }
@@ -63,37 +69,52 @@ private fun BrowserChrome(vm: BrowserViewModel) {
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
-            AddressBar(vm = vm, tab = activeTab)
             val tab: BrowserTab? = activeTab
-            if (tab == null) {
-                Box(modifier = Modifier.weight(1f))
-            } else {
-                val epoch by tab.webViewEpoch.collectAsStateWithLifecycle()
-                Box(modifier = Modifier.weight(1f)) {
+            Box(modifier = Modifier.weight(1f)) {
+                if (tab == null) {
+                    Box(modifier = Modifier.fillMaxSize())
+                } else {
+                    val epoch by tab.webViewEpoch.collectAsStateWithLifecycle()
+                    val hasNavigated by tab.hasNavigated.collectAsStateWithLifecycle()
                     key(tab.id, epoch) {
-                        if (tab.hasNavigated.collectAsStateWithLifecycle().value) {
+                        if (hasNavigated) {
                             AndroidView(
                                 factory = { ctx -> vm.obtainWebView(tab, ctx) },
                                 modifier = Modifier.fillMaxSize()
                             )
                         } else {
-                            StartPage(vm = vm)
+                            HomeScreen(vm = vm)
                         }
                     }
                     ErrorOverlay(
                         tab = tab,
+                        online = online,
                         onRetry = vm::retryCurrentTab,
-                        onGoBack = vm::goBack
+                        onGoBack = vm::goBack,
+                        onGoHome = vm::goHome
                     )
                 }
             }
-            BottomBar(vm = vm, tabCount = tabs.size, tab = activeTab)
+            BottomControls(vm = vm, tab = activeTab, tabCount = tabs.size)
         }
+
+        // AI entry: floating above the bottom bar, out of the way of navigation.
+        if (!editing) {
+            AiFloatingChip(
+                vm = vm,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = 84.dp)
+            )
+        }
+
+        AddressEditorOverlay(vm)
+
         SnackbarHost(
             hostState = snackbarHostState,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 72.dp)
+                .padding(bottom = 84.dp)
         )
     }
 }

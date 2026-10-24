@@ -19,6 +19,13 @@ class BrowserTab(
     val error = MutableStateFlow<PageError?>(null)
     val hasNavigated = MutableStateFlow(initialUrl.isNotBlank() && initialUrl != "about:blank")
 
+    /**
+     * Requests actually blocked by tracking protection during the CURRENT page
+     * load (reset on every onPageStarted). A real floor count, not an estimate
+     * of all tracking attempts.
+     */
+    val blockedCount = MutableStateFlow(0)
+
     /** Bumped when a dead WebView must be recreated, forcing a fresh AndroidView node. */
     val webViewEpoch = MutableStateFlow(0)
 

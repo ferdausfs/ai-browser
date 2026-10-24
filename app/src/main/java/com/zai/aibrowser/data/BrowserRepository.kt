@@ -42,6 +42,10 @@ class BrowserRepository(private val db: AppDatabase) {
         db.withTransaction { db.tabDao().deleteById(tabId) }
     }
 
+    suspend fun clearTabs() {
+        db.withTransaction { db.tabDao().clear() }
+    }
+
     suspend fun setActiveTab(tabId: Long) {
         db.withTransaction {
             db.tabDao().deactivateAll()

@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Tab
@@ -39,9 +40,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.zai.aibrowser.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,21 +65,24 @@ fun Sheets(vm: BrowserViewModel) {
                     onTabs = { vm.openSheet(BrowserViewModel.Sheet.TABS) },
                     onBookmarks = { vm.openSheet(BrowserViewModel.Sheet.BOOKMARKS) },
                     onHistory = { vm.openSheet(BrowserViewModel.Sheet.HISTORY) },
+                    onPrivacy = { vm.openSheet(BrowserViewModel.Sheet.PRIVACY) },
                     onClearData = { showClearDialog = true },
                     onSettings = { vm.openSettings() }
                 )
             }
         BrowserViewModel.Sheet.AI ->
             ModalBottomSheet(onDismissRequest = vm::closeSheet) { AiPanelContent(vm) }
+        BrowserViewModel.Sheet.PRIVACY ->
+            ModalBottomSheet(onDismissRequest = vm::closeSheet) { PrivacyDashboardContent(vm) }
         BrowserViewModel.Sheet.NONE -> Unit
     }
 
     if (showClearDialog) {
         ClearBrowsingDataDialog(
-            onConfirm = { h, c, cache ->
+            onConfirm = { tabs, h, c, cache ->
                 showClearDialog = false
                 vm.closeSheet()
-                vm.clearBrowsingData(h, c, cache)
+                vm.clearBrowsingData(tabs, h, c, cache)
             },
             onDismiss = { showClearDialog = false }
         )
@@ -167,7 +173,8 @@ private fun BookmarksSheetContent(vm: BrowserViewModel) {
         )
         if (bookmarks.isEmpty()) {
             Text(
-                "No bookmarks yet. Tap the star in the address bar to bookmark a page.",
+                "No bookmarks yet. Tap the address bar while browsing to open the " +
+                    "page tools, then add the page from the menu.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(vertical = 16.dp)
@@ -287,6 +294,7 @@ private fun MenuSheetContent(
     onTabs: () -> Unit,
     onBookmarks: () -> Unit,
     onHistory: () -> Unit,
+    onPrivacy: () -> Unit,
     onClearData: () -> Unit,
     onSettings: () -> Unit
 ) {
@@ -294,7 +302,8 @@ private fun MenuSheetContent(
         MenuRow(Icons.Default.Tab, "Tabs", onTabs)
         MenuRow(Icons.Default.Star, "Bookmarks", onBookmarks)
         MenuRow(Icons.Default.History, "History", onHistory)
-        MenuRow(Icons.Default.Delete, "Clear browsing data…", onClearData)
+        MenuRow(Icons.Default.Security, "Site privacy", onPrivacy)
+        MenuRow(painterResource(R.drawable.ic_erase), "Erase browsing data…", onClearData)
         MenuRow(Icons.Default.Settings, "Settings", onSettings)
     }
 }
@@ -315,25 +324,55 @@ private fun MenuRow(icon: ImageVector, label: String, onClick: () -> Unit) {
 }
 
 @Composable
+private fun MenuRow(icon: androidx.compose.ui.graphics.painter.Painter, label: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.width(16.dp))
+        Text(label, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+/**
+ * Explains what will be cleared BEFORE confirming, including the engine-level
+ * scope facts: cookies/site data and cache clearing affect ALL sites; history
+ * deletion affects this device's record only; bookmarks are always preserved.
+ */
+@Composable
 fun ClearBrowsingDataDialog(
-    onConfirm: (clearHistory: Boolean, clearCookies: Boolean, clearCache: Boolean) -> Unit,
+    onConfirm: (clearTabs: Boolean, clearHistory: Boolean, clearCookies: Boolean, clearCache: Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
+    var tabs by rememberSaveable { mutableStateOf(false) }
     var history by rememberSaveable { mutableStateOf(true) }
     var cookies by rememberSaveable { mutableStateOf(true) }
-    var cache by rememberSaveable { mutableStateOf(true) }
+    var cache by rememberSaveable { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Clear browsing data") },
+        title = { Text("Erase browsing data") },
         text = {
             Column {
-                DialogCheckbox("Browsing history", history) { history = it }
-                DialogCheckbox("Cookies and site data", cookies) { cookies = it }
-                DialogCheckbox("Cached images and files", cache) { cache = it }
+                DialogCheckbox("Open tabs (closes every tab)", tabs) { tabs = it }
+                DialogCheckbox("Browsing history (this device only)", history) { history = it }
+                DialogCheckbox("Cookies and site data (ALL sites)", cookies) { cookies = it }
+                DialogCheckbox("Cached images and files (ALL sites)", cache) { cache = it }
+                Text(
+                    "Android WebView clears cookies, site data and cache globally — " +
+                        "not just for the current site. Bookmarks are always kept. " +
+                        "This is not forensic-grade deletion.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(history, cookies, cache) }) { Text("Clear") }
+            TextButton(onClick = { onConfirm(tabs, history, cookies, cache) }) { Text("Erase") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )

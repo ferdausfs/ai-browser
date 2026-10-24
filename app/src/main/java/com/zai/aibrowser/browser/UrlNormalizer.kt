@@ -1,16 +1,18 @@
 package com.zai.aibrowser.browser
 
+import com.zai.aibrowser.privacy.SearchEngines
 import java.net.URLEncoder
 
 /**
  * Converts whatever the user typed into a loadable URL, or null if empty.
  * This is the only place that decides "search vs navigate", so it stays auditable.
+ * The search engine is user-selectable (privacy-first default: DuckDuckGo).
  */
 object UrlNormalizer {
 
-    const val SEARCH_TEMPLATE = "https://www.google.com/search?q="
+    const val LEGACY_GOOGLE_TEMPLATE = "https://www.google.com/search?q="
 
-    fun normalize(input: String): String? {
+    fun normalize(input: String, engine: SearchEngines.Engine = SearchEngines.byId(SearchEngines.DEFAULT_ID)): String? {
         val trimmed = input.trim()
         if (trimmed.isEmpty()) return null
         val lower = trimmed.lowercase()
@@ -21,7 +23,7 @@ object UrlNormalizer {
         return if (looksLikeUrl) {
             "https://$trimmed"
         } else {
-            SEARCH_TEMPLATE + URLEncoder.encode(trimmed, "UTF-8")
+            engine.queryTemplate + URLEncoder.encode(trimmed, "UTF-8")
         }
     }
 }

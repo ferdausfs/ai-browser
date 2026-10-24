@@ -1,132 +1,73 @@
-# AI Browser
+# Aegis Browser (repo: ai-browser)
 
-An Android browser with an AI command bar — familiar browser UI, with an AI agent that
-(observed over the coming phases) can read pages, plan actions and execute them safely
-under your approval.
+An original, premium, privacy-first Android browser with an AI task panel —
+powered by Kotlin + Jetpack Compose (Material 3), Android System WebView, Room,
+ViewModel/StateFlow/Coroutines, and a provider-agnostic AI layer.
 
-Built with **Kotlin + Jetpack Compose (Material 3)**, **Android WebView**, **Room**,
-**ViewModel/StateFlow/Coroutines**, and a provider-agnostic **AI layer** (mock provider
-included, so the app runs fully offline without any API key).
+The app previously shipped as "AI Browser" v1.0.0. This release is the UI/UX
+redesign + privacy hardening pass (v1.1.0): same applicationId
+(`com.zai.aibrowser`), same signing key, so self-update installs over it cleanly.
 
----
+## Status: v1.1.0 shipped
 
-## Status: Phase 1 shipped (v1.0.0)
+- **Identity**: original "Aegis" visual identity (teal/mint shield+spark), light
+  and dark themes, consistent shapes and typography.
+- **Home screen**: one prominent field (URL / search / AI task) with explicit
+  Browse-vs-AI mode chips, real shortcuts (bookmarks first), a real
+  "trackers blocked" counter and a quick Erase action.
+- **Browser controls**: one-handed bottom chrome — back, forward, address
+  (readable domain), tabs, menu — with a progress line, a floating AI chip and
+  48dp+ touch targets. Tapping the lock opens the site privacy dashboard.
+- **Privacy dashboard** (site sheet): verified facts only — domain, HTTPS state
+  (with an "encryption ≠ trust" note), real per-page blocked count, per-site
+  tracker exception toggle, report-broken-site link, engine-level permission
+  policy, and site-data clearing with its true (global) scope.
+- **Tracking protection**: request-based blocking of third-party subresources
+  against the StevenBlack/hosts list (MIT, 71k+ domains, embedded asset,
+  refreshed via `scripts/gen_tracker_list.py`). Proper domain matching (parent
+  walk, first-party exception via approximated eTLD+1), main frames never
+  blocked, per-site exceptions, real floor counts. See limitations below.
+- **AI tasks**: development preview with the on-device mock provider. The panel
+  never fakes agent progress: states stay PENDING, actions are labeled
+  SUGGESTED vs EXECUTED, Stop really cancels, and the off-device disclosure is
+  explicit. No page content is collected; nothing leaves the device.
+- **Self-update** (from v1.0.0, unchanged): GitHub Releases check → download →
+  platform installer. Publishing a new tag `vX.Y.Z` is enough to ship updates.
 
-### Implemented in this release
-
-**Browser (fully working):**
-- Address/search bar with smart URL detection, security indicator (lock / not-secure) and
-  bookmark/history suggestions while typing
-- Back / forward / reload / stop, live page-load progress bar
-- Multi-tab browsing (open, switch, close, tab count badge), tabs persist across restarts
-- Bookmarks and history (Room database, local-only)
-- Clear browsing data: history, cookies & site data, cache
-- Polished Material 3 light/dark theme (follows system, or override in Settings)
-- Start page with quick links, bottom toolbar, snackbar notifications
-
-**In-app Self-Update (fully working):**
-- Checks its own GitHub Releases (`releases/latest`), compares semantic versions
-- One tap: download with progress -> hand APK to the platform installer
-- Respects the "Install unknown apps" consent flow; no credentials embedded
-- Auto-check once per 24h (toggle in Settings), manual check in Settings -> Updates
-
-**AI agent contract (interfaces + mock, no UI-blockers):**
-- Full typed action vocabulary: `observe_page`, `scroll`, `click_element`, `fill_field`,
-  `navigate`, `go_back`, `ask_user`, `finish` (`AgentAction` sealed class)
-- `AiProvider`, `ActionExecutor`, `ActionVerifier`, `ApprovalHandler` interfaces
-- Visible AI command panel wired end-to-end with the Mock provider
-
-### Planned (Phase 2-4)
-
-| Phase | Scope |
-|-------|-------|
-| 2 | Read-only page observation (compact page representation, privacy redaction) + real AI summarization backend |
-| 3 | Controlled navigation/scroll/click/form-fill with typed actions, verification, visible agent status & logs, step limits, loop detection |
-| 4 | Assisted login (pause on CAPTCHA/OTP/passkey), approval gates for purchases/posts/deletions, hardening + full test suite |
-
----
-
-## Architecture
-
-```
-com.zai.aibrowser
-├── AiBrowserApp / MainActivity        # single activity, Compose
-├── browser/                           # Layer 1: browser engine + tab registry
-│   ├── TabManager / BrowserTab        # per-tab state flows (url, progress, back/forward...)
-│   ├── SecureWebViewFactory           # hardening + WebViewClient/WebChromeClient wiring
-│   └── UrlNormalizer                  # single auditable "search vs navigate" decision
-├── data/                              # Room storage (tabs, bookmarks, history)
-│   ├── db/ (Entities, Daos, AppDatabase)
-│   └── BrowserRepository              # single door to all browser data
-├── ai/                                # Layers 2-6 contract (Phase 1: mock implementation)
-│   ├── AiModels.kt                    # AgentAction schema, PageObservation, approvals
-│   └── AiProvider.kt                  # AiProvider / ActionExecutor / ActionVerifier / ApprovalHandler
-├── update/                            # self-update: GitHub Releases check, download, install
-└── ui/                                # Compose screens, sheets, theme, ViewModels
-```
-
-Agent layers (stable interfaces today, real implementations in Phase 2-4):
-
-```
-[Browser UI/Tables] -> [PageObserver] -> [AiProvider/planner] -> [ActionExecutor]
-                                                        |                |
-                                                 [ApprovalHandler]  [ActionVerifier]
-```
-
-## Security & privacy posture (already enforced in Phase 1)
-
-- **No JavaScript bridge**: `addJavascriptInterface()` is never used — page content can
-  never reach app internals. Page content is treated as untrusted data, not instructions.
-- **SSL errors are never bypassed**; an error page explains and blocks.
-- `file://`, `content://`, `data:`, `blob:`, `javascript:` navigations are blocked;
-  unknown external schemes are not auto-fired (no arbitrary intent launching).
-- Safe Browsing on, mixed content never allowed, geolocation off, no file access.
-- **No broad permissions**: only `INTERNET`, `ACCESS_NETWORK_STATE`, and
-  `REQUEST_INSTALL_PACKAGES` (for self-update, user-approved). No Accessibility Service.
-- **No AI credentials in the app**; the update checker is unauthenticated over HTTPS.
-- Browsing data never leaves the device; `allowBackup=false`.
-- Release signing keystore is committed **by design** so future releases keep the same
-  signature (required for updates to install). Fine for a personal/open project.
-
-## Self-Update — how it works
-
-1. App calls `https://api.github.com/repos/ferdausfs/ai-browser/releases/latest`
-2. Compares release tag `vX.Y.Z` with installed `versionName` (semantic compare)
-3. If newer: banner/dialog or Settings -> Updates -> "Download and install"
-4. APK downloads to app cache with a progress bar, then the platform installer opens
-5. User approves; Android enforces the same-signature rule
-
-## How to release an update (zero-hassle future updates)
-
-1. Bump `versionCode` and `versionName` in `app/build.gradle.kts`
-2. Commit and push to `main`
-3. Tag and push the tag — CI does the rest:
-   ```bash
-   git tag v1.0.1
-   git push origin v1.0.1
-   ```
-4. The `Release` workflow (`.github/workflows/release.yml`) builds the signed release APK
-   and publishes a GitHub Release with it
-5. Installed apps pick it up via the built-in updater (auto-check or manual)
-
-## Build it yourself
-
-Requirements: JDK 17+, Android SDK (platform 34, build-tools 34.0.0).
+## Build & test
 
 ```bash
-git clone https://github.com/ferdausfs/ai-browser.git
-cd ai-browser
-# point local.properties at your SDK (create the file):
-#   sdk.dir=/path/to/android-sdk
-./gradlew assembleRelease
-# APK: app/build/outputs/apk/release/app-release.apk
+./gradlew testDebugUnitTest   # unit tests (TrackerBlocker matching, UrlNormalizer)
+./gradlew assembleRelease     # signed release APK (R8 minified)
 ```
 
-The release keystore + password live in `keystore/` (committed intentionally — see the
-security note above).
+Latest verified results (this tree): 23/23 unit tests pass;
+`assembleRelease` BUILD SUCCESSFUL; APK signed with the release keystore,
+versionCode 2, versionName 1.1.0.
 
-## Install
+## Privacy & security notes
 
-1. Download `ai-browser-vX.Y.Z.apk` from [Releases](https://github.com/ferdausfs/ai-browser/releases)
-2. Open it; Android asks to allow installs from your browser/file manager (one time)
-3. Install — done. Future versions update in-app.
+- No JavaScript bridge to page content; page content is treated as untrusted data.
+- SSL errors are never bypassed; mixed content is never allowed.
+- Third-party cookies are blocked by default (toggle in Settings, with breakage note).
+- Camera/microphone/geolocation permission requests are denied at the engine
+  level; the app holds no such Android permissions.
+- WebView debugging is pinned to debug builds only.
+- Backup and device-transfer rules exclude all app data.
+- No analytics, no telemetry, no crash reporting, no ad feeds.
+
+## Known limitations (honest list)
+
+- Tracking protection is a baseline, not complete anti-tracking: Android
+  WebView cannot intercept service workers, WebRTC or DNS-level tracking, and
+  the blocklist is a periodic snapshot of a community source.
+- The eTLD+1 approximation uses a small set of common two-part public suffixes.
+- Cookies/site data and cache clearing are global (WebView scope), not per site.
+- HTTPS encryption does not mean a site is trustworthy; no privacy scores are
+  shown anywhere because they would be invented.
+- The release keystore is committed to this repo on purpose so self-update
+  signatures stay stable; acceptable for a personal/open project only.
+- `usesCleartextTraffic` stays enabled so http:// pages can still load (with a
+  visible "Not encrypted" state); the app's own API traffic is HTTPS-only.
+- The AI agent backend is not implemented; the panel is development-only and
+  clearly labeled as such.
